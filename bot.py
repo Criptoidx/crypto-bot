@@ -104,7 +104,7 @@ while True:
                 (macd_val < macd_signal and macd_obj.macd().iloc[-2] > macd_obj.macd_signal().iloc[-2])):
                 extras.append("🔁 Cambio de tendencia detectado")
 
-            # Enviar solo si hay señal o patrón
+              # Enviar solo si hay señal o patrón
             if signal or extras:
                 now = datetime.datetime.now().strftime('%H:%M:%S')
                 msg = f"""
@@ -120,9 +120,14 @@ while True:
 """
                 send_message(msg)
 
-        time.sleep(600)
+        # 🧪 Señal de prueba manual (puedes quitar esta línea luego de probar)
+        # send_message("🧪 Señal de prueba enviada manualmente")
+
+        # ⏱️ Espera de 60 segundos entre cada análisis
+        time.sleep(60)
 
     except Exception as e:
         send_message(f"⚠️ Error: {e}")
         time.sleep(60)
+                
         
