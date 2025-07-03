@@ -13,8 +13,7 @@ bot_activo = True
 
 def send_message(message):
     url = f'https://api.telegram.org/bot{TOKEN}/sendMessage'
-    payload = {'chat_id': CHAT_ID, 'text': message}
-    requests.post(url, data=payload)
+    requests.post(url, data={'chat_id': CHAT_ID, 'text': message})
 
 def get_prices():
     url = 'https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=100'
@@ -24,10 +23,8 @@ def get_prices():
         'close_time', 'quote_asset_volume', 'number_of_trades',
         'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore'
     ])
-    df['open'] = df['open'].astype(float)
-    df['close'] = df['close'].astype(float)
-    df['high'] = df['high'].astype(float)
-    df['low'] = df['low'].astype(float)
+    for col in ['open', 'high', 'low', 'close']:
+        df[col] = df[col].astype(float)
     return df
 
 def detect_three_white_soldiers(df):
@@ -38,8 +35,7 @@ def detect_three_white_soldiers(df):
         (row['close'] - row['open']) > (row['high'] - row['low']) * 0.5
         for _, row in candles.iterrows()
     ])
-    increasing = candles['close'].is_monotonic_increasing
-    return bullish and increasing
+    return bullish and candles['close'].is_monotonic_increasing
 
 def detect_three_black_crows(df):
     last = df.iloc[-4:]
@@ -49,19 +45,16 @@ def detect_three_black_crows(df):
         (row['open'] - row['close']) > (row['high'] - row['low']) * 0.5
         for _, row in candles.iterrows()
     ])
-    decreasing = candles['close'].is_monotonic_decreasing
-    return bearish and decreasing
+    return bearish and candles['close'].is_monotonic_decreasing
 
 def get_last_command():
-    url = f'https://api.telegram.org/bot{TOKEN}/getUpdates'
-    res = requests.get(url).json()
-    messages = res['result']
-    if messages:
-        last_msg = messages[-1]
-        return last_msg['message'].get('text', '').lower()
+    res = requests.get(f'https://api.telegram.org/bot{TOKEN}/getUpdates').json()
+    if res.get('result'):
+        return res['result'][-1]['message'].get('text', '').lower()
     return ''
 
-send_message("🤖 Bot de señales CRYPTO IDX activado...")
+# Mensaje de inicio
+send_message("🤖 Bot de señales CRYPTO IDX iniciado")
 
 while True:
     try:
@@ -69,7 +62,7 @@ while True:
         if 'apagar' in cmd:
             bot_activo = False
             send_message("🛑 Bot desactivado")
-        elif 'encender' in cmd:
+        if 'encender' in cmd:
             bot_activo = True
             send_message("✅ Bot activado")
 
@@ -83,52 +76,47 @@ while True:
             high = df['high']
             low = df['low']
 
+            # Indicadores
             rsi = RSIIndicator(close=close, window=14).rsi().iloc[-1]
             macd_obj = MACD(close=close)
             macd_val = macd_obj.macd().iloc[-1]
             macd_signal = macd_obj.macd_signal().iloc[-1]
-            stoch = StochasticOscillator(high=high, low=low, close=close)
-            stoch_val = stoch.stoch().iloc[-1]
-
-            boll = BollingerBands(close=close)
-            lower_band = boll.bollinger_lband().iloc[-1]
-            upper_band = boll.bollinger_hband().iloc[-1]
+            stoch_val = StochasticOscillator(high=high, low=low, close=close).stoch().iloc[-1]
+            lower_band = BollingerBands(close=close).bollinger_lband().iloc[-1]
+            upper_band = BollingerBands(close=close).bollinger_hband().iloc[-1]
             last_price = close.iloc[-1]
 
+            # Señales flexibles
             signal = None
-            call_conditions = [rsi < 40, macd_val > macd_signal, stoch_val < 30]
-            put_conditions = [rsi > 60, macd_val < macd_signal, stoch_val > 70]
-            if sum(call_conditions) >= 2:
+            if sum([rsi < 40, macd_val > macd_signal, stoch_val < 30]) >= 2:
                 signal = "📈 Señal de COMPRA (CALL)"
-            elif sum(put_conditions) >= 2:
+            if sum([rsi > 60, macd_val < macd_signal, stoch_val > 70]) >= 2:
                 signal = "📉 Señal de VENTA (PUT)"
 
             extras = []
-            if len(df) >= 4:
-                if detect_three_white_soldiers(df):
-                    extras.append("📈 Tres Soldados Blancos detectados (Patrón alcista)")
-                if detect_three_black_crows(df):
-                    extras.append("📉 Tres Cuervos Negros detectados (Patrón bajista)")
-
+            if detect_three_white_soldiers(df):
+                extras.append("📈 Tres Soldados Blancos detectados (Patrón alcista)")
+            if detect_three_black_crows(df):
+                extras.append("📉 Tres Cuervos Negros detectados (Patrón bajista)")
             if (last_price < lower_band and rsi < 30) or (last_price > upper_band and rsi > 70):
                 extras.append("💥 Retroceso en zona de rebote")
-
-            if (macd_val > macd_signal and macd_obj.macd().iloc[-2] < macd_obj.macd_signal().iloc[-2]) or \
-               (macd_val < macd_signal and macd_obj.macd().iloc[-2] > macd_obj.macd_signal().iloc[-2]):
+            if ((macd_val > macd_signal and macd_obj.macd().iloc[-2] < macd_obj.macd_signal().iloc[-2]) or
+                (macd_val < macd_signal and macd_obj.macd().iloc[-2] > macd_obj.macd_signal().iloc[-2])):
                 extras.append("🔁 Cambio de tendencia detectado")
 
+            # Enviar solo si hay señal o patrón
             if signal or extras:
                 now = datetime.datetime.now().strftime('%H:%M:%S')
                 msg = f"""
 ⏰ {now}
 📊 RSI: {round(rsi, 2)}
-📉 MACD: {round(macd_val, 2)} | Señal: {round(macd_signal, 2)}
+📉 MACD: {round(macd_val, 2)} | Signal: {round(macd_signal, 2)}
 🔄 Estocástico: {round(stoch_val, 2)}
 💵 Precio: {last_price}
 📉 BBands: {round(lower_band, 2)} - {round(upper_band, 2)}
 
 {signal if signal else ''}
-{chr(10).join(extras) if extras else ''}
+{chr(10).join(extras)}
 """
                 send_message(msg)
 
@@ -137,3 +125,4 @@ while True:
     except Exception as e:
         send_message(f"⚠️ Error: {e}")
         time.sleep(60)
+        
